@@ -46,7 +46,7 @@ def update_job(job_id, **values):
         jobs.setdefault(job_id, {}).update(values)
 
 
-def yt_options(out_template, bitrate, *, logger=None, verbose=False, client="mweb"):
+def yt_options(out_template, bitrate, *, logger=None, verbose=False, client="tv"):
     return {
         "format": "bestaudio/best",
         "outtmpl": out_template,
@@ -58,9 +58,6 @@ def yt_options(out_template, bitrate, *, logger=None, verbose=False, client="mwe
         "js_runtimes": {"node": {"path": NODE_PATH}},
         "extractor_args": {
             "youtube": {"player_client": [client]},
-            "youtubepot-bgutilhttp": {
-                "base_url": ["http://127.0.0.1:4416"],
-            },
         },
         "postprocessors": [{
             "key": "FFmpegExtractAudio",
@@ -170,7 +167,6 @@ def diagnostics():
         "yt_dlp_version": yt_dlp.version.__version__,
         "js_runtime": "node",
         "js_runtime_path": NODE_PATH,
-        "bgutil_base_url": "http://127.0.0.1:4416",
     }
 
     try:
