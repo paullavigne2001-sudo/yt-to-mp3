@@ -46,7 +46,7 @@ def update_job(job_id, **values):
         jobs.setdefault(job_id, {}).update(values)
 
 
-def yt_options(out_template, bitrate, *, logger=None, verbose=False):
+def yt_options(out_template, bitrate, *, logger=None, verbose=False, client="mweb"):
     return {
         "format": "bestaudio/best",
         "outtmpl": out_template,
@@ -55,11 +55,9 @@ def yt_options(out_template, bitrate, *, logger=None, verbose=False):
         "no_warnings": not verbose,
         "verbose": verbose,
         "logger": logger,
-        # yt-dlp EJS requires a supported Node runtime. Explicitly give the
-        # executable path so runtime discovery cannot select an old system node.
         "js_runtimes": {"node": {"path": NODE_PATH}},
         "extractor_args": {
-            "youtube": {"player_client": ["mweb"]},
+            "youtube": {"player_client": [client]},
             "youtubepot-bgutilhttp": {
                 "base_url": ["http://127.0.0.1:4416"],
             },
@@ -86,7 +84,7 @@ def convert_job(job_id: str, url: str, bitrate: str):
             elif data.get("status") == "finished":
                 update_job(job_id, progress=99, message="Conversion en MP3…")
 
-        opts = yt_options(out_template, bitrate)
+        opts = yt_options(out_template, bitrate, client="tv")
         opts["progress_hooks"] = [progress_hook]
 
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -147,31 +145,36 @@ def diagnostics():
     class CaptureLogger:
         def __init__(self):
             self.lines = []
-
         def _add(self, message):
             if message:
                 self.lines.append(str(message))
-                if len(self.lines) > 250:
+                if len(self.lines) > 400:
                     self.lines.pop(0)
-
         def debug(self, message): self._add(message)
         def info(self, message): self._add(message)
         def warning(self, message): self._add(f"WARNING: {message}")
         def error(self, message): self._add(f"ERROR: {message}")
 
-    logger = CaptureLogger()
+    def run_client(client):
+        logger = CaptureLogger()
+        try:
+            opts = yt_options(str(DOWNLOAD_DIR / f"diagnostic-{client}.%(ext)s"), "192K", logger=logger, verbose=True, client=client)
+            opts["skip_download"] = True
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+            return {"ok": True, "title": info.get("title"), "duration": info.get("duration")}, logger.lines
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}, logger.lines
+
     result = {
         "yt_dlp_version": yt_dlp.version.__version__,
         "js_runtime": "node",
         "js_runtime_path": NODE_PATH,
-        "player_client": "mweb",
         "bgutil_base_url": "http://127.0.0.1:4416",
     }
 
     try:
-        node = subprocess.run(
-            [NODE_PATH, "--version"], capture_output=True, text=True, timeout=5
-        )
+        node = subprocess.run([NODE_PATH, "--version"], capture_output=True, text=True, timeout=5)
         result["node_version"] = (node.stdout or node.stderr).strip()
     except Exception as exc:
         result["node_version"] = f"ERROR: {exc}"
@@ -183,35 +186,26 @@ def diagnostics():
         result["bgutil_ping"] = f"ERROR: {exc}"
 
     try:
-        version = subprocess.run(
-            ["bgutil-pot", "--version"], capture_output=True, text=True, timeout=5
-        )
+        version = subprocess.run(["bgutil-pot", "--version"], capture_output=True, text=True, timeout=5)
         result["bgutil_binary"] = (version.stdout or version.stderr).strip()
     except Exception as exc:
         result["bgutil_binary"] = f"ERROR: {exc}"
 
-    try:
-        opts = yt_options(str(DOWNLOAD_DIR / "diagnostic.%(ext)s"), "192K", logger=logger, verbose=True)
-        opts["skip_download"] = True
-        with yt_dlp.YoutubeDL(opts) as ydl:
-            info = ydl.extract_info(url, download=False)
-            result["youtube_result"] = {
-                "ok": True,
-                "title": info.get("title"),
-                "duration": info.get("duration"),
-            }
-    except Exception as exc:
-        result["youtube_result"] = {"ok": False, "error": str(exc)}
+    tv_result, tv_logs = run_client("tv")
+    mweb_result, mweb_logs = run_client("mweb")
+    result["tv_result"] = tv_result
+    result["mweb_result"] = mweb_result
+    result["youtube_result"] = tv_result if tv_result.get("ok") else mweb_result
 
-    lines = logger.lines
+    lines = tv_logs + mweb_logs
     result["provider_detected"] = any("PO Token Providers:" in line for line in lines)
     result["pot_generation_attempted"] = any("Generating a" in line and "PO Token" in line for line in lines)
     result["bot_check"] = any("Sign in to confirm" in line or "not a bot" in line for line in lines)
-    result["js_node_available"] = any("node-" in line and "unsupported" not in line for line in lines)
+    result["js_node_available"] = any("JS Challenge Providers:" in line and "node," in line for line in lines)
     result["relevant_logs"] = [
         line for line in lines
-        if any(key in line.lower() for key in ("pot", "bot", "provider", "mweb", "error", "javascript", "runtime"))
-    ][-100:]
+        if any(key in line.lower() for key in ("pot", "bot", "provider", "mweb", "tv", "error", "javascript", "runtime", "playability"))
+    ][-160:]
     return jsonify(result)
 
 
