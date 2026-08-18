@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#111827">
+  <title>YT → MP3</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="card">
+      <div class="brand">
+        <div class="logo">♪</div>
+        <div>
+          <h1>YT → MP3</h1>
+          <p>Convertisseur audio local</p>
+        </div>
+      </div>
+
+      <label for="url">Lien YouTube</label>
+      <div class="url-row">
+        <input id="url" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="off">
+        <button id="convert">Convertir</button>
+      </div>
+
+      <div class="options">
+        <label for="bitrate">Qualité MP3</label>
+        <select id="bitrate">
+          <option value="128">128 kb/s</option>
+          <option value="192" selected>192 kb/s</option>
+          <option value="256">256 kb/s</option>
+          <option value="320">320 kb/s</option>
+        </select>
+      </div>
+
+      <div id="result" class="result hidden">
+        <div class="status-line">
+          <span id="message">Prêt.</span>
+          <span id="percent">0 %</span>
+        </div>
+        <div class="progress"><div id="bar"></div></div>
+        <div id="title" class="title"></div>
+        <a id="download" class="download hidden" href="#">↓ Télécharger le MP3</a>
+      </div>
+
+      <div id="error" class="error hidden"></div>
+
+      <p class="notice">
+        Traitement local : le fichier audio est généré sur votre ordinateur.
+        Utilisez cet outil uniquement pour les contenus que vous êtes autorisé à télécharger.
+      </p>
+    </section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
