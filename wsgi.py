@@ -1,10 +1,8 @@
-from pathlib import Path
+from flask import render_template
 
 from app import app
 
-# Keep the entry point explicit for Gunicorn/Render.
-BASE_DIR = Path(__file__).resolve().parent
-
-@app.get("/", endpoint="home")
+# Explicit entry point for Gunicorn/Render.
+@app.route("/", methods=["GET"], endpoint="home")
 def home():
-    return app.send_static_file("index.html") if False else app.render_template("index.html")
+    return render_template("index.html")
