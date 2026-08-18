@@ -1,14 +1,13 @@
 FROM python:3.13-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    PATH="/usr/local/bin:${PATH}"
+    PYTHONUNBUFFERED=1
 
 ARG BGUTIL_VERSION=0.8.1
 ARG TARGETARCH
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates unzip \
+    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates unzip nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -31,12 +30,11 @@ RUN set -eux; \
       "https://github.com/jim60105/bgutil-ytdlp-pot-provider-rs/releases/download/v${BGUTIL_VERSION}/bgutil-ytdlp-pot-provider-rs.zip"; \
     unzip -q /tmp/bgutil-plugin.zip -d "${SITE_PACKAGES}"; \
     rm -f /tmp/bgutil-plugin.zip; \
-    bgutil-pot --version || true
+    bgutil-pot --version
 
 COPY . .
 RUN mkdir -p /app/downloads
 
 EXPOSE 10000
 
-# Start the local Rust PO-token provider, then Flask/Gunicorn.
 CMD ["sh", "-c", "bgutil-pot server --host 127.0.0.1 --port 4416 >/tmp/bgutil.log 2>&1 & BGUTIL_PID=$!; sleep 2; cd /app; exec gunicorn --bind 0.0.0.0:${PORT:-10000} --workers 1 --threads 4 --timeout 300 wsgi:app"]
