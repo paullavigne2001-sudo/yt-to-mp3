@@ -1,8 +1,10 @@
 import os
+import subprocess
 import threading
 import uuid
 from pathlib import Path
 from urllib.parse import urlparse
+from urllib.request import urlopen
 
 import yt_dlp
 from flask import Flask, jsonify, render_template, request, send_file
@@ -43,6 +45,30 @@ def update_job(job_id, **values):
         jobs.setdefault(job_id, {}).update(values)
 
 
+def yt_options(out_template, bitrate, *, logger=None, verbose=False):
+    return {
+        "format": "bestaudio/best",
+        "outtmpl": out_template,
+        "noplaylist": True,
+        "quiet": not verbose,
+        "no_warnings": not verbose,
+        "verbose": verbose,
+        "logger": logger,
+        "js_runtimes": {"node": {}},
+        "extractor_args": {
+            "youtube": {"player_client": ["mweb"]},
+            "youtubepot-bgutilhttp": {
+                "base_url": ["http://127.0.0.1:4416"],
+            },
+        },
+        "postprocessors": [{
+            "key": "FFmpegExtractAudio",
+            "preferredcodec": "mp3",
+            "preferredquality": bitrate.replace("K", ""),
+        }],
+    }
+
+
 def convert_job(job_id: str, url: str, bitrate: str):
     out_template = str(DOWNLOAD_DIR / f"{job_id}-%(title)s.%(ext)s")
     try:
@@ -57,32 +83,8 @@ def convert_job(job_id: str, url: str, bitrate: str):
             elif data.get("status") == "finished":
                 update_job(job_id, progress=99, message="Conversion en MP3…")
 
-        opts = {
-            "format": "bestaudio/best",
-            "outtmpl": out_template,
-            "noplaylist": True,
-            "quiet": True,
-            "no_warnings": True,
-            "progress_hooks": [progress_hook],
-            # yt-dlp Python API expects {runtime: {config}} here.
-            # Node is installed in the Render container and enabled explicitly.
-            "js_runtimes": {
-                "node": {},
-            },
-            "extractor_args": {
-                "youtube": {
-                    "player_client": ["mweb"],
-                },
-                "youtubepot-bgutilhttp": {
-                    "base_url": ["http://127.0.0.1:4416"],
-                },
-            },
-            "postprocessors": [{
-                "key": "FFmpegExtractAudio",
-                "preferredcodec": "mp3",
-                "preferredquality": bitrate.replace("K", ""),
-            }],
-        }
+        opts = yt_options(out_template, bitrate)
+        opts["progress_hooks"] = [progress_hook]
 
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=True)
@@ -130,6 +132,74 @@ def convert():
     update_job(job_id, status="queued", progress=0, message="Conversion en attente…")
     threading.Thread(target=convert_job, args=(job_id, url, BITRATES[bitrate]), daemon=True).start()
     return jsonify({"job_id": job_id})
+
+
+@app.post("/api/diagnostics")
+def diagnostics():
+    data = request.get_json(silent=True) or {}
+    url = str(data.get("url", "")).strip()
+    if not valid_youtube_url(url):
+        return jsonify({"error": "Veuillez saisir une URL YouTube valide."}), 400
+
+    class CaptureLogger:
+        def __init__(self):
+            self.lines = []
+
+        def _add(self, message):
+            if message:
+                self.lines.append(str(message))
+                if len(self.lines) > 250:
+                    self.lines.pop(0)
+
+        def debug(self, message): self._add(message)
+        def info(self, message): self._add(message)
+        def warning(self, message): self._add(f"WARNING: {message}")
+        def error(self, message): self._add(f"ERROR: {message}")
+
+    logger = CaptureLogger()
+    result = {
+        "yt_dlp_version": yt_dlp.version.__version__,
+        "js_runtime": "node",
+        "player_client": "mweb",
+        "bgutil_base_url": "http://127.0.0.1:4416",
+    }
+
+    try:
+        with urlopen("http://127.0.0.1:4416/ping", timeout=4) as response:
+            result["bgutil_ping"] = response.read().decode("utf-8", errors="replace")
+    except Exception as exc:
+        result["bgutil_ping"] = f"ERROR: {exc}"
+
+    try:
+        version = subprocess.run(
+            ["bgutil-pot", "--version"], capture_output=True, text=True, timeout=5
+        )
+        result["bgutil_binary"] = (version.stdout or version.stderr).strip()
+    except Exception as exc:
+        result["bgutil_binary"] = f"ERROR: {exc}"
+
+    try:
+        opts = yt_options(str(DOWNLOAD_DIR / "diagnostic.%(ext)s"), "192K", logger=logger, verbose=True)
+        opts["skip_download"] = True
+        with yt_dlp.YoutubeDL(opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            result["youtube_result"] = {
+                "ok": True,
+                "title": info.get("title"),
+                "duration": info.get("duration"),
+            }
+    except Exception as exc:
+        result["youtube_result"] = {"ok": False, "error": str(exc)}
+
+    lines = logger.lines
+    result["provider_detected"] = any("PO Token Providers:" in line for line in lines)
+    result["pot_generation_attempted"] = any("Generating a" in line and "PO Token" in line for line in lines)
+    result["bot_check"] = any("Sign in to confirm" in line or "not a bot" in line for line in lines)
+    result["relevant_logs"] = [
+        line for line in lines
+        if any(key in line.lower() for key in ("pot", "bot", "provider", "mweb", "error"))
+    ][-80:]
+    return jsonify(result)
 
 
 @app.get("/api/status/<job_id>")
