@@ -24,6 +24,7 @@ ALLOWED_HOSTS = {
     "youtu.be", "www.youtu.be",
 }
 BITRATES = {"128": "128K", "192": "192K", "256": "256K", "320": "320K"}
+NODE_PATH = "/usr/bin/node"
 
 
 def valid_youtube_url(value: str) -> bool:
@@ -54,7 +55,9 @@ def yt_options(out_template, bitrate, *, logger=None, verbose=False):
         "no_warnings": not verbose,
         "verbose": verbose,
         "logger": logger,
-        "js_runtimes": {"node": {}},
+        # yt-dlp EJS requires a supported Node runtime. Explicitly give the
+        # executable path so runtime discovery cannot select an old system node.
+        "js_runtimes": {"node": {"path": NODE_PATH}},
         "extractor_args": {
             "youtube": {"player_client": ["mweb"]},
             "youtubepot-bgutilhttp": {
@@ -160,9 +163,18 @@ def diagnostics():
     result = {
         "yt_dlp_version": yt_dlp.version.__version__,
         "js_runtime": "node",
+        "js_runtime_path": NODE_PATH,
         "player_client": "mweb",
         "bgutil_base_url": "http://127.0.0.1:4416",
     }
+
+    try:
+        node = subprocess.run(
+            [NODE_PATH, "--version"], capture_output=True, text=True, timeout=5
+        )
+        result["node_version"] = (node.stdout or node.stderr).strip()
+    except Exception as exc:
+        result["node_version"] = f"ERROR: {exc}"
 
     try:
         with urlopen("http://127.0.0.1:4416/ping", timeout=4) as response:
@@ -195,10 +207,11 @@ def diagnostics():
     result["provider_detected"] = any("PO Token Providers:" in line for line in lines)
     result["pot_generation_attempted"] = any("Generating a" in line and "PO Token" in line for line in lines)
     result["bot_check"] = any("Sign in to confirm" in line or "not a bot" in line for line in lines)
+    result["js_node_available"] = any("node-" in line and "unsupported" not in line for line in lines)
     result["relevant_logs"] = [
         line for line in lines
-        if any(key in line.lower() for key in ("pot", "bot", "provider", "mweb", "error"))
-    ][-80:]
+        if any(key in line.lower() for key in ("pot", "bot", "provider", "mweb", "error", "javascript", "runtime"))
+    ][-100:]
     return jsonify(result)
 
 
