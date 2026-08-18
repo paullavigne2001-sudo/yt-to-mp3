@@ -1,8 +1,10 @@
 const urlInput = document.getElementById("url");
 const bitrate = document.getElementById("bitrate");
 const convertButton = document.getElementById("convert");
+const diagnoseButton = document.getElementById("diagnose");
 const result = document.getElementById("result");
 const errorBox = document.getElementById("error");
+const diagnosticBox = document.getElementById("diagnostic");
 const message = document.getElementById("message");
 const percent = document.getElementById("percent");
 const bar = document.getElementById("bar");
@@ -51,6 +53,49 @@ async function startConversion() {
   }
 }
 
+async function diagnose() {
+  const url = urlInput.value.trim();
+  if (!url) return showError("Collez d’abord un lien YouTube.");
+
+  diagnoseButton.disabled = true;
+  errorBox.classList.add("hidden");
+  diagnosticBox.classList.remove("hidden");
+  diagnosticBox.textContent = "Diagnostic en cours…\n\nVérification de bgutil puis test yt-dlp. Cela peut prendre quelques secondes.";
+
+  try {
+    const response = await fetch("/api/diagnostics", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({url})
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Le diagnostic a échoué.");
+
+    const summary = [
+      `yt-dlp : ${data.yt_dlp_version || "?"}`,
+      `Node.js / JS runtime : ${data.js_runtime}`,
+      `Client YouTube : ${data.player_client}`,
+      `bgutil ping : ${data.bgutil_ping || "ERREUR"}`,
+      `bgutil binaire : ${data.bgutil_binary || "ERREUR"}`,
+      `Provider PO Token détecté : ${data.provider_detected ? "OUI" : "NON"}`,
+      `Génération PO Token tentée : ${data.pot_generation_attempted ? "OUI" : "NON"}`,
+      `Blocage anti-bot détecté : ${data.bot_check ? "OUI" : "NON"}`,
+      `Test YouTube : ${data.youtube_result?.ok ? "SUCCÈS" : "ÉCHEC"}`,
+      "",
+      "--- Journaux pertinents ---",
+      ...(data.relevant_logs || []),
+      "",
+      "--- Résultat YouTube ---",
+      JSON.stringify(data.youtube_result || {}, null, 2)
+    ];
+    diagnosticBox.textContent = summary.join("\n");
+  } catch (err) {
+    diagnosticBox.textContent = "Erreur : " + err.message;
+  } finally {
+    diagnoseButton.disabled = false;
+  }
+}
+
 async function poll(jobId) {
   try {
     const response = await fetch(`/api/status/${jobId}`);
@@ -85,6 +130,7 @@ async function poll(jobId) {
 }
 
 convertButton.addEventListener("click", startConversion);
+diagnoseButton.addEventListener("click", diagnose);
 urlInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") startConversion();
 });
