@@ -1,5 +1,4 @@
 import os
-import re
 import threading
 import uuid
 from pathlib import Path
@@ -65,8 +64,7 @@ def convert_job(job_id: str, url: str, bitrate: str):
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [progress_hook],
-            # YouTube currently uses Proof-of-Origin tokens for some clients.
-            # The bgutil provider installed in the container supplies them.
+            "js_runtimes": {"node": "/usr/bin/node"},
             "extractor_args": {
                 "youtube": {
                     "player_client": ["mweb"],
