@@ -64,7 +64,11 @@ def convert_job(job_id: str, url: str, bitrate: str):
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [progress_hook],
-            "js_runtimes": {"node": "/usr/bin/node"},
+            # yt-dlp Python API expects {runtime: {config}} here.
+            # Node is installed in the Render container and enabled explicitly.
+            "js_runtimes": {
+                "node": {},
+            },
             "extractor_args": {
                 "youtube": {
                     "player_client": ["mweb"],
