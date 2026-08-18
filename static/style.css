@@ -37,6 +37,9 @@ button, .download {
   white-space:nowrap;
 }
 button:disabled { opacity:.55; cursor:wait; }
+.secondary { background:#334155; }
+.diagnostic-row { margin-top:14px; }
+.diagnostic-row button { min-height:42px; }
 .options { margin-top:18px; display:flex; align-items:center; gap:14px; }
 .options label { margin:0; min-width:120px; }
 .options select { max-width:180px; }
@@ -47,6 +50,11 @@ button:disabled { opacity:.55; cursor:wait; }
 .title { font-weight:700; margin-bottom:14px; word-break:break-word; }
 .download { min-height:44px; background:#22c55e; }
 .error { margin-top:18px; padding:14px; border-radius:12px; background:#450a0a; color:#fecaca; }
+.diagnostic {
+  margin-top:18px; padding:16px; border-radius:14px; background:#020617;
+  border:1px solid #334155; color:#cbd5e1; font:12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space:pre-wrap; overflow:auto; max-height:460px;
+}
 .notice { margin:22px 0 0; color:#64748b; font-size:12px; line-height:1.5; }
 .hidden { display:none !important; }
 @media (max-width: 620px) {
