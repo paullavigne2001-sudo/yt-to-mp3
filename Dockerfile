@@ -14,11 +14,12 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Build the bgutil PO-token HTTP provider.
+# Build the current bgutil PO-token provider.
 RUN git clone --depth 1 --single-branch --branch 1.3.1 \
       https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git /opt/bgutil \
     && cd /opt/bgutil/server \
-    && deno install --allow-scripts=npm:canvas --frozen
+    && deno install --allow-scripts=npm:canvas --frozen \
+    && deno approve-scripts
 
 COPY . .
 RUN mkdir -p /app/downloads
