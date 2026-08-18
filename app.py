@@ -65,6 +65,16 @@ def convert_job(job_id: str, url: str, bitrate: str):
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [progress_hook],
+            # YouTube currently uses Proof-of-Origin tokens for some clients.
+            # The bgutil provider installed in the container supplies them.
+            "extractor_args": {
+                "youtube": {
+                    "player_client": ["mweb"],
+                },
+                "youtubepot-bgutilhttp": {
+                    "base_url": ["http://127.0.0.1:4416"],
+                },
+            },
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
