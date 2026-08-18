@@ -6,8 +6,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 ARG BGUTIL_VERSION=0.8.1
 ARG TARGETARCH
 
+# yt-dlp EJS currently requires a supported Node.js runtime. Debian's
+# packaged nodejs can be too old, so install the current Node.js 24 line.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates unzip nodejs \
+    && apt-get install -y --no-install-recommends ffmpeg curl ca-certificates unzip gnupg \
+    && curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && node --version \
+    && npm --version \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
