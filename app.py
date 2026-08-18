@@ -1,6 +1,5 @@
 import os
 import re
-import shutil
 import threading
 import uuid
 from pathlib import Path
@@ -13,20 +12,16 @@ BASE_DIR = Path(__file__).resolve().parent
 DOWNLOAD_DIR = BASE_DIR / "downloads"
 DOWNLOAD_DIR.mkdir(exist_ok=True)
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=str(BASE_DIR / "templates"))
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024
 
 jobs = {}
 jobs_lock = threading.Lock()
 
 ALLOWED_HOSTS = {
-    "youtube.com",
-    "www.youtube.com",
-    "m.youtube.com",
-    "youtu.be",
-    "www.youtu.be",
+    "youtube.com", "www.youtube.com", "m.youtube.com",
+    "youtu.be", "www.youtu.be",
 }
-
 BITRATES = {"128": "128K", "192": "192K", "256": "256K", "320": "320K"}
 
 
@@ -37,12 +32,6 @@ def valid_youtube_url(value: str) -> bool:
         return parsed.scheme in {"http", "https"} and host in ALLOWED_HOSTS
     except Exception:
         return False
-
-
-def safe_name(value: str) -> str:
-    value = re.sub(r'[\\/:*?"<>|]+', "_", value)
-    value = re.sub(r"\s+", " ", value).strip()
-    return value[:180] or "audio"
 
 
 def find_mp3(job_id: str):
@@ -61,17 +50,12 @@ def convert_job(job_id: str, url: str, bitrate: str):
         update_job(job_id, status="running", progress=0, message="Analyse de la vidéo…")
 
         def progress_hook(data):
-            status = data.get("status")
-            if status == "downloading":
+            if data.get("status") == "downloading":
                 total = data.get("total_bytes") or data.get("total_bytes_estimate")
                 current = data.get("downloaded_bytes", 0)
                 percent = round((current / total) * 100, 1) if total else 0
-                update_job(
-                    job_id,
-                    progress=min(percent, 99),
-                    message="Téléchargement de l’audio…",
-                )
-            elif status == "finished":
+                update_job(job_id, progress=min(percent, 99), message="Téléchargement de l’audio…")
+            elif data.get("status") == "finished":
                 update_job(job_id, progress=99, message="Conversion en MP3…")
 
         opts = {
@@ -81,14 +65,11 @@ def convert_job(job_id: str, url: str, bitrate: str):
             "quiet": True,
             "no_warnings": True,
             "progress_hooks": [progress_hook],
-            "postprocessors": [
-                {
-                    "key": "FFmpegExtractAudio",
-                    "preferredcodec": "mp3",
-                    "preferredquality": bitrate.replace("K", ""),
-                }
-            ],
-            "restrictfilenames": False,
+            "postprocessors": [{
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": bitrate.replace("K", ""),
+            }],
         }
 
         with yt_dlp.YoutubeDL(opts) as ydl:
@@ -100,33 +81,26 @@ def convert_job(job_id: str, url: str, bitrate: str):
         if not mp3 or not mp3.exists():
             raise RuntimeError("Le fichier MP3 n’a pas été généré.")
 
-        update_job(
-            job_id,
-            status="done",
-            progress=100,
-            message="Conversion terminée.",
-            title=title,
-            duration=duration,
-            filename=mp3.name,
-        )
+        update_job(job_id, status="done", progress=100,
+                   message="Conversion terminée.", title=title,
+                   duration=duration, filename=mp3.name)
     except Exception as exc:
-        # Remove partial files for this job.
         for p in DOWNLOAD_DIR.glob(f"{job_id}*"):
             try:
                 p.unlink()
             except OSError:
                 pass
-        update_job(
-            job_id,
-            status="error",
-            progress=0,
-            message=str(exc),
-        )
+        update_job(job_id, status="error", progress=0, message=str(exc))
 
 
-@app.get("/")
+@app.route("/", methods=["GET"])
 def index():
     return render_template("index.html")
+
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok", "service": "yt-to-mp3"})
 
 
 @app.post("/api/convert")
@@ -142,14 +116,7 @@ def convert():
 
     job_id = uuid.uuid4().hex
     update_job(job_id, status="queued", progress=0, message="Conversion en attente…")
-
-    thread = threading.Thread(
-        target=convert_job,
-        args=(job_id, url, BITRATES[bitrate]),
-        daemon=True,
-    )
-    thread.start()
-
+    threading.Thread(target=convert_job, args=(job_id, url, BITRATES[bitrate]), daemon=True).start()
     return jsonify({"job_id": job_id})
 
 
@@ -159,7 +126,6 @@ def status(job_id):
         job = jobs.get(job_id)
     if not job:
         return jsonify({"error": "Conversion introuvable."}), 404
-
     result = dict(job)
     if result.get("status") == "done":
         result["download_url"] = f"/api/download/{job_id}"
@@ -171,16 +137,11 @@ def download(job_id):
     mp3 = find_mp3(job_id)
     if not mp3 or not mp3.exists():
         return jsonify({"error": "Fichier introuvable."}), 404
-    return send_file(
-        mp3,
-        as_attachment=True,
-        download_name=mp3.name.removeprefix(job_id + "-"),
-        mimetype="audio/mpeg",
-    )
+    return send_file(mp3, as_attachment=True,
+                     download_name=mp3.name.removeprefix(job_id + "-"),
+                     mimetype="audio/mpeg")
 
 
 if __name__ == "__main__":
-    host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "5000"))
-    print(f"YT → MP3 disponible sur http://{host}:{port}")
-    app.run(host=host, port=port, debug=False, threaded=True)
+    app.run(host=os.environ.get("HOST", "127.0.0.1"),
+            port=int(os.environ.get("PORT", "5000")), threaded=True)
